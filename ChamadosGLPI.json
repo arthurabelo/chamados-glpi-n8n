@@ -1,0 +1,2106 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "triggerAtHour": 8
+            },
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "triggerAtHour": 10
+            },
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "triggerAtHour": 13
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -3856,
+        2336
+      ],
+      "id": "a8680eec-a146-47a8-946d-96c4bfb5379d",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const agora = new Date().getTime();\n\n// Se a API retornar vazio ou o primeiro item não tiver os dados necessários, não é feriado\nif ($input.all().length === 0 || !$input.all()[0].json.hasOwnProperty('start')) {\n  return [{ json: { eh_feriado: false } }];\n}\n\n// Verifica se algum dos itens retornados coincide com a data atual E é do tipo correto\nconst feriadoEncontrado = $input.all().some(item => {\n  const data = item.json;\n  const inicio = new Date(data.start).getTime();\n  const fim = new Date(data.finish).getTime();\n  \n  // Normaliza o texto para evitar erros de maiúsculas/minúsculas ou espaços extras\n  const tipo = data.event_kind ? data.event_kind.trim() : \"\";\n\n  // Condição 1: Está dentro do horário?\n  const noPrazo = agora >= inicio && agora <= fim;\n\n  // Condição 2: É Feriado ou Ponto Facultativo?\n  const ehTipoValido = (tipo === \"Feriado\" || tipo === \"Ponto Facultativo\");\n\n  return noPrazo && ehTipoValido;\n});\n\nreturn [{ json: { eh_feriado: feriadoEncontrado } }];"
+      },
+      "id": "747a779b-5e9a-4e1e-a5c0-d5db667a616e",
+      "name": "Verificar Feriado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3344,
+        2336
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://agenda.tjpi.jus.br/utils/schedule",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "unit_id",
+              "value": "110001470"
+            },
+            {
+              "name": "start",
+              "value": "={{ $now.setZone('America/Sao_Paulo').startOf('day').toISO() }}"
+            },
+            {
+              "name": "end",
+              "value": "={{ $now.setZone('America/Sao_Paulo').endOf('day').toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "39080221-deed-4543-8635-0a4e1cb8f23a",
+      "name": "HTTP Request TJPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -3600,
+        2336
+      ],
+      "alwaysOutputData": true,
+      "notesInFlow": false,
+      "retryOnFail": true,
+      "executeOnce": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "216d3eba-299d-4578-821b-cf7491bcbca9",
+              "leftValue": "={{ $json.eh_feriado.toString() }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -3072,
+        2336
+      ],
+      "id": "69bb763f-39ed-4643-bd1d-4610bd3da918",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ $('HTTP Request TJPI').item.json.event_kind }} ({{ $now }})"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        -2816,
+        2160
+      ],
+      "id": "f8dcb55c-a91c-49d3-a0ac-d337bf41c0b5",
+      "name": "Stop and Error"
+    },
+    {
+      "parameters": {
+        "content": "## 01 · Agendamento e trava de feriados\n\n**Objetivo:** iniciar o workflow nos horários programados e impedir execução em feriados/pontos facultativos.\n\n**Fluxo:**\n1. `Schedule Trigger` dispara em dias úteis.\n2. `HTTP Request TJPI` consulta a agenda/feriados do TJPI.\n3. `Verificar Feriado` interpreta a resposta.\n4. `If` decide: se for feriado, para em `Stop and Error`; caso contrário, segue para autenticação.",
+        "height": 736,
+        "width": 1320,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -3984,
+        1856
+      ],
+      "typeVersion": 1,
+      "id": "b2eb90ea-91c7-4dc4-8200-6a54d64e48d6",
+      "name": "Módulo 01 - Agendamento e trava de feriados"
+    },
+    {
+      "parameters": {
+        "content": "## Legenda rápida\n\n- **01–03:** entrada, autenticação e coleta.\n- **04:** regra de negócio central.\n- **05:** envio consolidado para grupos.\n- **06:** envio privado por técnico.",
+        "height": 224,
+        "width": 1320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -3984,
+        2608
+      ],
+      "typeVersion": 1,
+      "id": "5b41f45e-bf5b-4003-9110-b7e98530d4a7",
+      "name": "Legenda de manutenção"
+    },
+    {
+      "parameters": {
+        "content": "## 02 · Configuração e autenticação GLPI\n\n**Objetivo:** preparar variáveis, obter cookie inicial, extrair campos dinâmicos do HTML e autenticar no GLPI.\n\n**Nós principais:**\n- `Variaveis`: URL base e credenciais.\n- `GET Login Cookie`: abre a tela de login e captura cookie inicial.\n- `Variables HTML Login`: extrai CSRF e nomes dos campos.\n- `POST login`: autentica usando formulário.\n- `Cookie Auth`: consolida o cookie autenticado para as próximas requisições.",
+        "height": 976,
+        "width": 1120,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2640,
+        1856
+      ],
+      "typeVersion": 1,
+      "id": "da8c7667-df67-4f31-89c6-f03615423934",
+      "name": "Módulo 02 - Configuração e autenticação GLPI"
+    },
+    {
+      "parameters": {
+        "content": "## 04 · Inteligência e montagem da mensagem\n\n**Objetivo:** consolidar chamados, calcular atrasos, formatar texto e preparar saídas para as rotas de notificação.",
+        "height": 984,
+        "width": 380,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1472,
+        1840
+      ],
+      "typeVersion": 1,
+      "id": "42e10730-0081-4b46-b0fe-48ddb41f1e72",
+      "name": "Módulo 04 - Inteligência e montagem da mensagem"
+    },
+    {
+      "parameters": {
+        "content": "## 05 · Envio para grupos WhatsApp\n\n**Objetivo:** rotear mensagens consolidadas para os grupos corretos.\n\n**Regras visuais do bloco:**\n- Linha superior: notificações gerais da Infra.\n- Linha intermediária: Coordenação Infra.\n- Linha inferior: retornos, descartes e loop de continuação.\n\n`Disjuntor de Execução` + `Filtro Unificador` reduzem risco de duplicidade antes de chamar o sub-workflow.",
+        "height": 1076,
+        "width": 1820,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1872,
+        1744
+      ],
+      "typeVersion": 1,
+      "id": "5bab396c-65f7-4873-a1a9-28eeab2ac75a",
+      "name": "Módulo 05 - Envio para grupos WhatsApp"
+    },
+    {
+      "parameters": {
+        "content": "## 06 · Envio individual por técnico\n\n**Objetivo:** enviar mensagens privadas apenas para técnicos com chamados atrasados nos grupos permitidos.\n\n**Fluxo:**\n1. `IfHorario` valida o horário permitido.\n2. `Ifinfra4` valida o escopo de Infra.\n3. `Preparar mensagens individuais` agrupa chamados por técnico.\n4. `Split Out1` e `Loop Over Items1` enviam uma mensagem por técnico.\n5. `Wait2` controla intervalo entre envios.\n\nNós `No Operation` funcionam como saídas seguras/descartes para manter o fluxo legível.",
+        "height": 828,
+        "width": 1820,
+        "color": "#1B3B39"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1872,
+        896
+      ],
+      "typeVersion": 1,
+      "id": "05f84bbe-7f79-41e8-8816-e919c84a899c",
+      "name": "Módulo 06 - Envio individual por técnico"
+    },
+    {
+      "parameters": {
+        "content": "## 03 · Catálogo de relatórios e coleta CSV\n\n**Objetivo:** usar as buscas salvas do GLPI como fonte de verdade, verificar se há chamados antes da exportação e impedir que CSV antigo/de outro grupo siga para a montagem.\n\n**Fluxo:**\n1. `Links` mantém apenas o mapeamento grupo ↔ savedsearch_id, sem critérios longos.\n2. `Split Out` transforma a lista em itens individuais.\n3. `Loop Over Items` percorre cada busca salva.\n4. `Pesquisar lista GLPI` abre a busca salva atual no GLPI.\n5. `Validar resultado da pesquisa` verifica se existem chamados atuais no HTML e extrai o link de exportação atualizado.\n6. `IF Baixar CSV` só permite exportar se houver chamados reais.\n7. `GET CSV` baixa o CSV validado.\n8. `Extract from File` converte o CSV em JSON.\n9. `Filtrar CSV pelo grupo` remove linhas que não pertencem à busca salva atual.\n10. `Mensagem Grupo` entrega os campos esperados aos módulos 4, 5 e 6.",
+        "height": 972,
+        "width": 2932,
+        "color": "#093986"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1488,
+        1856
+      ],
+      "typeVersion": 1,
+      "id": "d8c8b07e-4acc-4e67-a34f-03e19146fe79",
+      "name": "Módulo 03 - Catálogo de relatórios e coleta CSV1"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"linksCSV\": [\n              {\n            \"id_glpi\": 311,\n            \"grupo\": \"COORDENAÇÃO INFRA\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=6502&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=8698&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=6550&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=9432&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=9471&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=4588&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bvalue%5D=7835&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bvalue%5D=10870&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bvalue%5D=10875&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bvalue%5D=6176&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bvalue%5D=12384&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bvalue%5D=12632&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bvalue%5D=5343&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bvalue%5D=5750&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bvalue%5D=4282&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 327,\n            \"grupo\": \"N1 - INFRAESTRUTURA\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=8&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=30&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 324,\n            \"grupo\": \"N2 - INFRAESTRUTURA\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=8&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=9&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 332,\n            \"grupo\": \"N3 - INFRAESTRUTURA\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=8&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=10&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n    {\n            \"id_glpi\": 328,\n            \"grupo\": \"LOGUSCOPIADORAS\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=8715&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 331,\n            \"grupo\": \"N1 - MICROINFORMÁTICA\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=5445&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=7044&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=6936&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=9511&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=6484&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=9312&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bvalue%5D=6301&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bvalue%5D=6105&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bvalue%5D=11645&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bvalue%5D=5832&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bvalue%5D=9789&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bvalue%5D=5671&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bvalue%5D=9316&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bvalue%5D=11342&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bvalue%5D=4282&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Bvalue%5D=3575&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bvalue%5D=10194&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Bvalue%5D=9983&criteria%5B0%5D%5Bcriteria%5D%5B18%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B18%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B18%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B18%5D%5Bvalue%5D=3307&criteria%5B0%5D%5Bcriteria%5D%5B19%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B19%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B19%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B19%5D%5Bvalue%5D=17054&criteria%5B0%5D%5Bcriteria%5D%5B20%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B20%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B20%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B20%5D%5Bvalue%5D=11115&criteria%5B0%5D%5Bcriteria%5D%5B21%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B21%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B21%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B21%5D%5Bvalue%5D=17099&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n    {\n            \"id_glpi\": 323,\n            \"grupo\": \"N2 - SETECOR\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=10894&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=6175&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=9070&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=6396&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=4940&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 325,\n            \"grupo\": \"N1 - SISTEMAS\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=7633&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=11271&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=6924&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=10564&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=9850&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=10245&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bvalue%5D=10098&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bvalue%5D=10090&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bvalue%5D=8926&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bvalue%5D=4855&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bvalue%5D=10100&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bvalue%5D=10146&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bvalue%5D=9273&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bvalue%5D=3841&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bvalue%5D=10145&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B15%5D%5Bvalue%5D=10629&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bvalue%5D=7946&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B17%5D%5Bvalue%5D=8838&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 321,\n            \"grupo\": \"N2 - SISTEMAS ADMINISTRATIVOS\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=7407&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=6666&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=6570&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=8798&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bvalue%5D=5783&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bvalue%5D=3275&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bvalue%5D=4174&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bvalue%5D=5505&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bvalue%5D=3693&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bvalue%5D=4584&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bvalue%5D=4309&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bvalue%5D=3981&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bvalue%5D=3821&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B16%5D%5Bvalue%5D=3328&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 329,\n            \"grupo\": \"N2 - SISTEMAS EXTRAJUDICIAIS\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=8929&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=6423&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4770&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=4266&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=13585&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=15042&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 322,\n            \"grupo\": \"N2 - SISTEMAS JUDICIAIS\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=7742&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=7163&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=7142&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=7065&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=9847&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=5469&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bvalue%5D=5342&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bvalue%5D=5135&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bvalue%5D=5103&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bvalue%5D=4942&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bvalue%5D=4569&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B11%5D%5Bvalue%5D=4547&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B12%5D%5Bvalue%5D=4349&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B13%5D%5Bvalue%5D=4303&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B14%5D%5Bvalue%5D=4165&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&criteria%5B2%5D%5Blink%5D=AND&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=view&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=contains&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 333,\n            \"grupo\": \"N3 - SISTEMAS JUDICIAIS\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=3360&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=7220&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=6912&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=6875&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=6660&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=6152&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B6%5D%5Bvalue%5D=5750&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B7%5D%5Bvalue%5D=5611&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B8%5D%5Bvalue%5D=3977&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B9%5D%5Bvalue%5D=3671&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B10%5D%5Bvalue%5D=6134&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&criteria%5B2%5D%5Blink%5D=AND&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=view&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=contains&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=&display_type=-3\"\n        },\n        {\n            \"id_glpi\": 326,\n            \"grupo\": \"N3 - SUPORTE\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=7209&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=7047&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=6298&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=5002&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=4763&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B5%5D%5Bvalue%5D=4234&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=3&criteria%5B2%5D%5Blink%5D=AND&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=view&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=contains&criteria%5B2%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=&display_type=-3\"\n        },\n    {\n            \"id_glpi\": 183,\n            \"grupo\": \"⚫NÃO ATRIBUÍDO - GLPI\",\n            \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&sort%5B0%5D=19&order%5B0%5D=DESC&start=0&criteria%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=2&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=5&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B0%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=0&criteria%5B1%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Blink%5D=AND&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B0%5D%5Bvalue%5D=notold&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B1%5D%5Bvalue%5D=1&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B2%5D%5Bvalue%5D=2&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B3%5D%5Bvalue%5D=4&criteria%5B1%5D%5Bcriteria%5D%5B4%5D%5Blink%5D=OR&criteria%5B1%5D%5Bcriteria%5D%5B4%5D%5Bfield%5D=12&criteria%5B1%5D%5Bcriteria%5D%5B4%5D%5Bsearchtype%5D=equals&criteria%5B1%5D%5Bcriteria%5D%5B4%5D%5Bvalue%5D=3&display_type=-3\"\n        }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -272,
+        1872
+      ],
+      "id": "2946494f-727d-4b19-8928-c7b0e5210558",
+      "name": "Links[backup]"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"linksCSV\": [\n    {\n      \"id_glpi\": 311,\n      \"grupo\": \"COORDENAÇÃO INFRA\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=311&display_type=3\"\n    },\n    {\n      \"id_glpi\": 327,\n      \"grupo\": \"N1 - INFRAESTRUTURA\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=327&display_type=3\"\n    },\n    {\n      \"id_glpi\": 324,\n      \"grupo\": \"N2 - INFRAESTRUTURA\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=324&display_type=3\"\n    },\n    {\n      \"id_glpi\": 332,\n      \"grupo\": \"N3 - INFRAESTRUTURA\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=332&display_type=3\"\n    },\n    {\n      \"id_glpi\": 328,\n      \"grupo\": \"LOGUSCOPIADORAS\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=328&display_type=3\"\n    },\n    {\n      \"id_glpi\": 331,\n      \"grupo\": \"N1 - MICROINFORMÁTICA\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=331&display_type=3\"\n    },\n    {\n      \"id_glpi\": 323,\n      \"grupo\": \"N2 - SETECOR\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=323&display_type=3\"\n    },\n    {\n      \"id_glpi\": 325,\n      \"grupo\": \"N1 - SISTEMAS\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=325&display_type=3\"\n    },\n    {\n      \"id_glpi\": 321,\n      \"grupo\": \"N2 - SISTEMAS ADMINISTRATIVOS\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=321&display_type=3\"\n    },\n    {\n      \"id_glpi\": 329,\n      \"grupo\": \"N2 - SISTEMAS EXTRAJUDICIAIS\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=329&display_type=3\"\n    },\n    {\n      \"id_glpi\": 322,\n      \"grupo\": \"N2 - SISTEMAS JUDICIAIS\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=322&display_type=3\"\n    },\n    {\n      \"id_glpi\": 333,\n      \"grupo\": \"N3 - SISTEMAS JUDICIAIS\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=333&display_type=3\"\n    },\n    {\n      \"id_glpi\": 326,\n      \"grupo\": \"N3 - SUPORTE\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=326&display_type=3\"\n    },\n    {\n      \"id_glpi\": 183,\n      \"grupo\": \"⚫NÃO ATRIBUÍDO - GLPI\",\n      \"link\": \"https://glpi.suaempresa.com/glpi/front/report.dynamic.php?item_type=Ticket&savedsearches_id=183&display_type=3\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -96,
+        1872
+      ],
+      "id": "5e3277c8-f811-48df-be95-a6c406b041c2",
+      "name": "Links[backup]1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        2176
+      ],
+      "id": "6f93f853-d9ff-49a7-a008-73b116e7ce01",
+      "name": "No Operation, do nothing8"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        2352
+      ],
+      "id": "615f8c08-baf6-4fe5-b2b4-4fba00b3b1ca",
+      "name": "No Operation, do nothing9"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -976,
+        2352
+      ],
+      "id": "bc28a29d-e943-4ca9-8eee-f809096781e9",
+      "name": "Loop Over Items",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "=linksCSV",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -1248,
+        2352
+      ],
+      "id": "57aa7fcc-933e-42d2-a9f0-3f36ce7b4482",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Variaveis').item.json.glpiBaseUrl }}/glpi/front/login.php",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ Object.values($node[\"GET Login Cookie\"].json.headers[\"set-cookie\"]).map(v => String(v).split(';')[0]).join('; ') }}"
+            },
+            {
+              "name": "Referer",
+              "value": "https://glpi.suaempresa.com/glpi/front/login.php"
+            },
+            {
+              "name": "Origin",
+              "value": "https://glpi.suaempresa.com"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "specifyBody": "string",
+        "body": "={{\n  'noAUTO=0'\n  + '&redirect='\n  + '&_glpi_csrf_token=' + $json.csrf\n  + '&' + $json.userfield + '=' + $('Variaveis').item.json.glpiUser\n  + '&' + $json.passField + '=' + $('Variaveis').item.json.glpiPass\n  + '&submit='\n}}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1904,
+        2352
+      ],
+      "id": "95a93af2-1dae-4839-8aba-33e6599f5c57",
+      "name": "POST login",
+      "alwaysOutputData": false,
+      "notesInFlow": false,
+      "retryOnFail": false,
+      "executeOnce": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "sourceData": "={{ $json.data }}",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "csrf",
+              "cssSelector": "input[name=\"_glpi_csrf_token\"]",
+              "returnValue": "attribute",
+              "attribute": "value"
+            },
+            {
+              "key": "userfield",
+              "cssSelector": "#login_name",
+              "returnValue": "attribute",
+              "attribute": "name"
+            },
+            {
+              "key": "passField",
+              "cssSelector": "#login_password",
+              "returnValue": "attribute",
+              "attribute": "name"
+            },
+            {
+              "key": "rememberField",
+              "cssSelector": "#login_remember",
+              "returnValue": "attribute",
+              "attribute": "name"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -2128,
+        2352
+      ],
+      "id": "2ba26d2a-81a3-4b2f-99a2-a83f2a4d8daf",
+      "name": "Variables HTML Login"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "522dbcf9-4a28-4976-9b7d-8aa72f38da8d",
+              "name": "glpiUser",
+              "value": "SEU_USUARIO",
+              "type": "string"
+            },
+            {
+              "id": "30c7f3bf-a6d7-47eb-8f3b-7be2ddb1973c",
+              "name": "glpiPass",
+              "value": "SUA_SENHA",
+              "type": "string"
+            },
+            {
+              "id": "a1ff6c4e-938c-4a0d-8c86-d64cddfbac30",
+              "name": "glpiBaseUrl",
+              "value": "https://glpi.suaempresa.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2576,
+        2352
+      ],
+      "id": "2de9af4a-eb0c-4140-90fa-b0fa45c888ca",
+      "name": "Variaveis"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7f8c020a-210b-4ec3-8848-4c98124b9636",
+              "name": "cookieAuth",
+              "value": "={{ Object.values($node[\"POST login\"].json.headers[\"set-cookie\"]).map(v => String(v).split(';')[0]).join('; ') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1648,
+        2352
+      ],
+      "id": "3194fcbe-2811-4b61-b939-5a1ca23b9f68",
+      "name": "Cookie Auth"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.glpiBaseUrl }}/glpi/front/central.php?noAUTO=0",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "pt-BR,pt;q=0.9,en;q=0.8"
+            },
+            {
+              "name": "Referer",
+              "value": "https://glpi.suaempresa.com/glpi/index.php?noAUTO=1"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -2368,
+        2352
+      ],
+      "id": "30d12c11-2ea1-4d21-ab6a-0475de6b34a8",
+      "name": "GET Login Cookie"
+    },
+    {
+      "parameters": {
+        "options": {
+          "delimiter": ";",
+          "enableBOM": true,
+          "relaxQuotes": false,
+          "headerRow": true,
+          "includeEmptyCells": true,
+          "readAsString": true,
+          "skipRecordsWithErrors": {
+            "value": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        864,
+        2384
+      ],
+      "id": "3c25293b-1532-4a53-919b-0baddc389ba4",
+      "name": "Extract from File",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $('Cookie Auth').item.json.cookieAuth }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "text/csv,text/plain,application/csv,application/octet-stream,*/*"
+            },
+            {
+              "name": "Referer",
+              "value": "={{ $json.link_pesquisa_html ?? $('Variaveis').item.json.glpiBaseUrl + '/glpi/front/ticket.php' }}"
+            },
+            {
+              "name": "Cache-Control",
+              "value": "no-cache, no-store, must-revalidate, max-age=0"
+            },
+            {
+              "name": "Pragma",
+              "value": "no-cache"
+            },
+            {
+              "name": "Expires",
+              "value": "0"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "pt-BR,pt;q=0.9,en;q=0.8"
+            },
+            {
+              "name": "If-Modified-Since",
+              "value": "Mon, 26 Jul 1997 05:00:00 GMT"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        640,
+        2384
+      ],
+      "id": "b5981fdb-927c-4abe-b6da-6773c8fb7051",
+      "name": "GET CSV",
+      "onError": "continueRegularOutput",
+      "notes": "Baixa o CSV usando o href real do botão Todas páginas em CSV extraído da página ticket.php."
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('Extrair window.location da busca salva').item.json;\nconst item = $('Loop Over Items').item.json;\nconst baseUrl = String($('Variaveis').item.json.glpiBaseUrl || '').replace(/\\/+$/, '');\nconst html = String($json.data ?? $json.body ?? '');\n\nfunction decodeHtml(valor) {\n  return String(valor ?? '')\n    .replace(/&amp;/g, '&')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#039;/g, \"'\")\n    .replace(/&apos;/g, \"'\")\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&nbsp;/g, ' ');\n}\n\nfunction stripTags(valor) {\n  return decodeHtml(String(valor ?? '')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]*>/g, ' '))\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction normalizar(valor) {\n  return stripTags(valor)\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .toLowerCase();\n}\n\nfunction absolutizar(url) {\n  url = decodeHtml(url || '').trim();\n  if (!url) return '';\n  if (/^https?:\\/\\//i.test(url)) return url;\n  if (url.startsWith('/')) return baseUrl + url;\n  return `${baseUrl}/glpi/${url.replace(/^\\/+/, '')}`;\n}\n\nfunction safeDecode(valor) {\n  const texto = String(valor ?? '');\n  try { return decodeURIComponent(texto); } catch (e) { return texto; }\n}\n\nfunction idsDeTicketsNoHtml(htmlRaw) {\n  const ids = new Set();\n  const patterns = [\n    /ticket\\.form\\.php\\?id=(\\d+)/gi,\n    /front\\/ticket\\.form\\.php\\?id=(\\d+)/gi,\n    /data-itemtype=[\"']Ticket[\"'][^>]*data-id=[\"']?(\\d+)[\"']?/gi,\n    /data-id=[\"']?(\\d+)[\"']?[^>]*data-itemtype=[\"']Ticket[\"']/gi\n  ];\n\n  for (const pattern of patterns) {\n    let match;\n    while ((match = pattern.exec(htmlRaw)) !== null) ids.add(String(match[1]));\n  }\n\n  return Array.from(ids);\n}\n\nfunction extrairHrefDaTag(tag) {\n  const m = String(tag || '').match(/\\bhref\\s*=\\s*(['\"])(.*?)\\1/i);\n  return m ? decodeHtml(m[2]) : '';\n}\n\nfunction extrairLinksCsvTodasPaginas(htmlRaw) {\n  const candidatos = [];\n  const anchorRegex = /<a\\b[^>]*href\\s*=\\s*(['\"])([\\s\\S]*?)\\1[^>]*>([\\s\\S]*?)<\\/a>/gi;\n  let match;\n\n  while ((match = anchorRegex.exec(htmlRaw)) !== null) {\n    const tagInteira = match[0];\n    const href = extrairHrefDaTag(tagInteira);\n    if (!href) continue;\n\n    const hrefDecoded = safeDecode(decodeHtml(href));\n    if (!/report\\.dynamic\\.php/i.test(hrefDecoded)) continue;\n    if (!/item_type=Ticket/i.test(hrefDecoded)) continue;\n\n    const texto = normalizar(match[3]);\n    const isTodasPaginasCsvTexto = texto.includes('todas') && texto.includes('paginas') && texto.includes('csv');\n    const isDisplayTypeMenos3 = /(?:^|[?&])display_type=-3(?:&|$)/i.test(hrefDecoded);\n\n    if (!isTodasPaginasCsvTexto && !isDisplayTypeMenos3) continue;\n\n    candidatos.push({\n      href: absolutizar(href),\n      score: (isTodasPaginasCsvTexto ? 100 : 0) + (isDisplayTypeMenos3 ? 100 : 0),\n      texto,\n      decoded: hrefDecoded\n    });\n  }\n\n  // Fallback: procurar qualquer report.dynamic.php com display_type=-3, mesmo fora de <a>.\n  const reportRegex = /([^\"'<>\\s]*report\\.dynamic\\.php\\?[^\"'<>\\s]*display_type=-3[^\"'<>\\s]*)/gi;\n  while ((match = reportRegex.exec(htmlRaw)) !== null) {\n    const href = decodeHtml(match[1]);\n    const decoded = safeDecode(href);\n    if (!/item_type=Ticket/i.test(decoded)) continue;\n    candidatos.push({ href: absolutizar(href), score: 50, texto: 'fallback_display_type_-3', decoded });\n  }\n\n  const vistos = new Set();\n  return candidatos\n    .filter(c => {\n      const key = safeDecode(c.href);\n      if (vistos.has(key)) return false;\n      vistos.add(key);\n      return true;\n    })\n    .sort((a, b) => b.score - a.score);\n}\n\nfunction itemVazio(motivo, extras = {}) {\n  return [{\n    json: {\n      ...item,\n      baixar_csv: false,\n      pesquisa_vazia: true,\n      motivo,\n      ...extras,\n      ID: '',\n      'Título': '',\n      Status: '',\n      'Última atualização': '',\n      'Data de abertura': '',\n      Prioridade: '',\n      'Atribuído - Grupo técnico': '',\n      'Atribuído - Técnico': '',\n      'Tempo para solução + Progresso': '',\n      'Tempo para resolver excedido': ''\n    },\n    pairedItem: { item: 0 }\n  }];\n}\n\nconst texto = stripTags(html);\nconst textoNorm = texto.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();\n\nconst pareceLogin =\n  /name=[\"']?login_name/i.test(html) ||\n  /login_password/i.test(html) ||\n  (textoNorm.includes('login') && textoNorm.includes('senha'));\n\nif (pareceLogin) {\n  return itemVazio('pagina_ticket_retornou_tela_de_login', {\n    erro_glpi: 'A URL extraída de window.location retornou tela de login. Cookie/sessão GLPI possivelmente inválido.',\n    link_pesquisa_html: meta.link_pesquisa_html\n  });\n}\n\nconst idsPesquisaHtml = idsDeTicketsNoHtml(html);\n\nconst semResultados =\n  textoNorm.includes('nenhum item encontrado') ||\n  textoNorm.includes('nenhum elemento encontrado') ||\n  textoNorm.includes('nenhum registro encontrado') ||\n  textoNorm.includes('nao ha itens') ||\n  textoNorm.includes('não há itens') ||\n  textoNorm.includes('sem resultado') ||\n  textoNorm.includes('sem resultados') ||\n  textoNorm.includes('0 item') ||\n  textoNorm.includes('0 resultado') ||\n  /0\\s*-\\s*0\\s*\\/\\s*0/.test(texto);\n\nif (!idsPesquisaHtml.length || semResultados) {\n  return itemVazio('busca_salva_sem_chamados_atuais_no_html', {\n    ids_pesquisa_html: idsPesquisaHtml,\n    total_chamados_html: idsPesquisaHtml.length,\n    link_pesquisa_html: meta.link_pesquisa_html,\n    savedsearch_window_location: meta.savedsearch_window_location\n  });\n}\n\nconst candidatosCsv = extrairLinksCsvTodasPaginas(html);\n\nif (!candidatosCsv.length) {\n  return itemVazio('link_todas_paginas_csv_nao_encontrado_no_html_ticket', {\n    ids_pesquisa_html: idsPesquisaHtml,\n    total_chamados_html: idsPesquisaHtml.length,\n    link_pesquisa_html: meta.link_pesquisa_html,\n    debug_html_export: html.slice(Math.max(0, html.indexOf('dropdown-export') - 500), html.indexOf('dropdown-export') + 5000)\n  });\n}\n\nconst escolhido = candidatosCsv[0];\n\nreturn [{\n  json: {\n    ...item,\n    baixar_csv: true,\n    pesquisa_vazia: false,\n    ids_pesquisa_html: idsPesquisaHtml,\n    total_chamados_html: idsPesquisaHtml.length,\n    link: escolhido.href,\n    link_pesquisa_html: meta.link_pesquisa_html,\n    savedsearch_window_location: meta.savedsearch_window_location,\n    savedsearch_carregada_na_sessao: item.id_glpi,\n    link_exportacao_tipo: 'html_ticket_botao_todas_paginas_csv',\n    link_exportacao_score: escolhido.score,\n    link_exportacao_texto: escolhido.texto,\n    link_exportacao_preview: safeDecode(escolhido.href).slice(0, 1000)\n  },\n  pairedItem: { item: 0 }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        2528
+      ],
+      "id": "0de7498c-7cf3-43ce-830a-a6dbb037532f",
+      "name": "Validar resultado da pesquisa",
+      "notes": "Recebe o HTML de ticket.php, valida se há chamados e extrai o href do botão Todas páginas em CSV, ou seja, display_type=-3."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c48756be-7cb8-4dcb-a000-d7be75aee551",
+              "leftValue": "={{ $json.baixar_csv }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        2528
+      ],
+      "id": "e1d34f40-9ab4-4d6a-a514-73d611f82af3",
+      "name": "IF Baixar CSV"
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('Validar resultado da pesquisa').item.json;\nconst rows = $input.all().map(i => i.json || {});\nconst idsPermitidos = new Set((meta.ids_pesquisa_html || []).map(id => String(id).trim()).filter(Boolean));\n\nfunction normalizar(valor) {\n  return String(valor ?? '')\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/<br\\s*\\/?>/gi, ' ')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .toLowerCase();\n}\n\nconst validos = rows.filter(row => {\n  const id = String(row.ID ?? '').trim();\n  if (!/^\\d+$/.test(id)) return false;\n\n  // Proteção final: só deixa passar chamados vistos no HTML da busca salva atual.\n  if (idsPermitidos.size > 0 && !idsPermitidos.has(id)) return false;\n\n  return true;\n});\n\nif (!validos.length) {\n  return [{\n    json: {\n      id_glpi: meta.id_glpi,\n      grupo: meta.grupo,\n      baixar_csv: false,\n      pesquisa_vazia: true,\n      motivo: 'csv_sem_linhas_validas_para_a_busca_salva_atual',\n      link_csv_usado: meta.link,\n      link_pesquisa_html: meta.link_pesquisa_html,\n      ID: '',\n      'Título': '',\n      Status: '',\n      'Última atualização': '',\n      'Data de abertura': '',\n      Prioridade: '',\n      'Atribuído - Grupo técnico': '',\n      'Atribuído - Técnico': '',\n      'Tempo para solução + Progresso': '',\n      'Tempo para resolver excedido': ''\n    },\n    pairedItem: { item: 0 }\n  }];\n}\n\nreturn validos.map((row, index) => ({\n  json: {\n    ...row,\n    id_glpi: String(meta.id_glpi),\n    grupo: meta.grupo,\n    __id_glpi_validado: String(meta.id_glpi),\n    __grupo_validado: meta.grupo,\n    __validado_por_ids_html: idsPermitidos.size > 0,\n    __link_csv_usado: meta.link,\n    __link_pesquisa_html: meta.link_pesquisa_html,\n    __savedsearch_carregada_na_sessao: meta.savedsearch_carregada_na_sessao\n  },\n  pairedItem: { item: index }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        2384
+      ],
+      "id": "d1393d13-d597-46cd-94d3-9c55f899433b",
+      "name": "Filtrar CSV pelo grupo",
+      "onError": "continueRegularOutput",
+      "notes": "Bloqueia CSV antigo ou errado comparando os IDs do CSV com os IDs vistos na página ticket.php da saved search atual."
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Variaveis').item.json.glpiBaseUrl + '/glpi/front/savedsearch.php?action=load&id=' + $('Loop Over Items').item.json.id_glpi + '&noAUTO=0' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $('Cookie Auth').item.json.cookieAuth }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            {
+              "name": "Referer",
+              "value": "={{ $('Variaveis').item.json.glpiBaseUrl }}/glpi/front/ticket.php?reset=reset"
+            },
+            {
+              "name": "Cache-Control",
+              "value": "no-cache, no-store, must-revalidate, max-age=0"
+            },
+            {
+              "name": "Pragma",
+              "value": "no-cache"
+            },
+            {
+              "name": "Expires",
+              "value": "0"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "pt-BR,pt;q=0.9,en;q=0.8"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -480,
+        2528
+      ],
+      "id": "2532fcf5-6667-4d3c-a679-81ac3414fff5",
+      "name": "Carregar busca salva GLPI",
+      "onError": "continueRegularOutput",
+      "notes": "Carrega a saved search. O GLPI retorna um HTML intermediário contendo window.location com a URL real de ticket.php e os critérios atuais."
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Loop Over Items').item.json;\nconst baseUrl = String($('Variaveis').item.json.glpiBaseUrl || '').replace(/\\/+$/, '');\nconst html = String($json.data ?? $json.body ?? '');\n\nfunction decodeHtml(valor) {\n  return String(valor ?? '')\n    .replace(/&amp;/g, '&')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#039;/g, \"'\")\n    .replace(/&apos;/g, \"'\")\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&nbsp;/g, ' ');\n}\n\nfunction stripTags(valor) {\n  return decodeHtml(String(valor ?? '')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]*>/g, ' '))\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction absolutizar(url) {\n  url = decodeHtml(url || '').trim();\n  if (!url) return '';\n  if (/^https?:\\/\\//i.test(url)) return url;\n  if (url.startsWith('/')) return baseUrl + url;\n  return `${baseUrl}/glpi/${url.replace(/^\\/+/, '')}`;\n}\n\nfunction getHeader(headers, nome) {\n  headers = headers || {};\n  const alvo = String(nome).toLowerCase();\n  for (const key of Object.keys(headers)) {\n    if (String(key).toLowerCase() === alvo) {\n      const v = headers[key];\n      return Array.isArray(v) ? String(v[0] || '') : String(v || '');\n    }\n  }\n  return '';\n}\n\nconst texto = stripTags(html);\nconst textoNorm = texto.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();\n\nconst pareceLogin =\n  /name=[\"']?login_name/i.test(html) ||\n  /login_password/i.test(html) ||\n  (textoNorm.includes('login') && textoNorm.includes('senha'));\n\nfunction retornoVazio(motivo, extras = {}) {\n  // Fallback controlado: evita quebrar URL vazia no próximo HTTP Request.\n  return [{\n    json: {\n      ...item,\n      link_pesquisa_html: `${baseUrl}/glpi/front/ticket.php?savedsearches_id=${encodeURIComponent(String(item.id_glpi))}&itemtype=Ticket&reset=reset`,\n      aviso_extracao_window_location: motivo,\n      ...extras\n    },\n    pairedItem: { item: 0 }\n  }];\n}\n\nif (pareceLogin) {\n  return retornoVazio('savedsearch_retornou_tela_de_login', {\n    erro_glpi: 'A requisição savedsearch.php?action=load retornou tela de login. Cookie/sessão GLPI possivelmente inválido.'\n  });\n}\n\nlet location = '';\n\n// Caso o servidor algum dia use redirect HTTP real.\nlocation = getHeader($json.headers || $json.responseHeaders || {}, 'location');\n\n// Caso atual observado: HTML com JavaScript window.location='...ticket.php?...criteria...'.\nif (!location) {\n  const matches = [...html.matchAll(/window\\.location(?:\\.href)?\\s*=\\s*(['\"])([\\s\\S]*?)\\1/gi)];\n  const escolhido = matches\n    .map(m => decodeHtml(m[2]))\n    .find(v => /\\/glpi\\/front\\/ticket\\.php/i.test(v) || /ticket\\.php/i.test(v));\n  location = escolhido || '';\n}\n\n// Fallback para document.location/assign, se aparecer em outra versão do GLPI.\nif (!location) {\n  const m = html.match(/(?:document\\.)?location(?:\\.href)?\\s*=\\s*(['\"])([\\s\\S]*?ticket\\.php[\\s\\S]*?)\\1/i)\n    || html.match(/location\\.assign\\(\\s*(['\"])([\\s\\S]*?ticket\\.php[\\s\\S]*?)\\1\\s*\\)/i);\n  if (m) location = decodeHtml(m[2]);\n}\n\nif (!location) {\n  return retornoVazio('window_location_nao_encontrado_no_html_da_savedsearch', {\n    debug_html_inicio: html.slice(0, 1500)\n  });\n}\n\nconst linkPesquisaHtml = absolutizar(location);\n\nreturn [{\n  json: {\n    ...item,\n    link_pesquisa_html: linkPesquisaHtml,\n    savedsearch_window_location: location,\n    savedsearch_carregada_na_sessao: item.id_glpi\n  },\n  pairedItem: { item: 0 }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        2528
+      ],
+      "id": "8c1b4c25-4134-4d27-8f81-d454f3bb06b2",
+      "name": "Extrair window.location da busca salva",
+      "onError": "continueRegularOutput",
+      "notes": "Extrai o window.location retornado por savedsearch.php?action=load&id=... e monta a URL absoluta da página real ticket.php com os critérios atuais."
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link_pesquisa_html }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $('Cookie Auth').item.json.cookieAuth }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            {
+              "name": "Referer",
+              "value": "={{ $('Variaveis').item.json.glpiBaseUrl + '/glpi/front/savedsearch.php?action=load&id=' + $('Loop Over Items').item.json.id_glpi }}"
+            },
+            {
+              "name": "Cache-Control",
+              "value": "no-cache, no-store, must-revalidate, max-age=0"
+            },
+            {
+              "name": "Pragma",
+              "value": "no-cache"
+            },
+            {
+              "name": "Expires",
+              "value": "0"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "pt-BR,pt;q=0.9,en;q=0.8"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -32,
+        2528
+      ],
+      "id": "a245d5d0-6133-4021-bb63-28b130838fee",
+      "name": "Abrir página da busca salva",
+      "onError": "continueRegularOutput",
+      "notes": "Abre a URL indicada em window.location. Nesta página fica o botão Exportar com o link Todas páginas em CSV."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"linksCSV\": [\n    {\n      \"id_glpi\": 311,\n      \"grupo\": \"COORDENAÇÃO INFRA\"\n    },\n    {\n      \"id_glpi\": 327,\n      \"grupo\": \"N1 - INFRAESTRUTURA\"\n    },\n    {\n      \"id_glpi\": 324,\n      \"grupo\": \"N2 - INFRAESTRUTURA\"\n    },\n    {\n      \"id_glpi\": 332,\n      \"grupo\": \"N3 - INFRAESTRUTURA\"\n    },\n    {\n      \"id_glpi\": 328,\n      \"grupo\": \"LOGUSCOPIADORAS\"\n    },\n    {\n      \"id_glpi\": 331,\n      \"grupo\": \"N1 - MICROINFORMÁTICA\"\n    },\n    {\n      \"id_glpi\": 323,\n      \"grupo\": \"N2 - SETECOR\"\n    },\n    {\n      \"id_glpi\": 325,\n      \"grupo\": \"N1 - SISTEMAS\"\n    },\n    {\n      \"id_glpi\": 321,\n      \"grupo\": \"N2 - SISTEMAS ADMINISTRATIVOS\"\n    },\n    {\n      \"id_glpi\": 329,\n      \"grupo\": \"N2 - SISTEMAS EXTRAJUDICIAIS\"\n    },\n    {\n      \"id_glpi\": 322,\n      \"grupo\": \"N2 - SISTEMAS JUDICIAIS\"\n    },\n    {\n      \"id_glpi\": 333,\n      \"grupo\": \"N3 - SISTEMAS JUDICIAIS\"\n    },\n    {\n      \"id_glpi\": 326,\n      \"grupo\": \"N3 - SUPORTE\"\n    },\n    {\n      \"id_glpi\": 183,\n      \"grupo\": \"⚫NÃO ATRIBUÍDO - GLPI\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1456,
+        2352
+      ],
+      "id": "b23a7835-5ac1-4932-a7c7-95c703e1a18c",
+      "name": "Listas"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4272,
+        1840
+      ],
+      "id": "f1a050cd-4741-4faa-8813-b9b1afe5fbea",
+      "name": "No Operation, do nothing1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b5a1c2e2-a474-48ff-912f-c2b5296687e9",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "permitido",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4016,
+        1728
+      ],
+      "id": "244e9bdf-0223-4a2a-9003-5d30b5661f64",
+      "name": "Filtro Unificador"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "eNEcLGD3gxkHLbw7xlV-p",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/eNEcLGD3gxkHLbw7xlV-p",
+          "cachedResultName": "Chamados GLPI [ARTHUR]"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        4272,
+        1616
+      ],
+      "id": "c37a9513-8757-49d9-bfe9-1d86ec1cb0b3",
+      "name": "Call 'Chamados GLPI [ARTHUR]'"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "=tecnicos",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        1392
+      ],
+      "id": "665a8d7f-4c15-47d8-8dbb-c1ada31bc5fe",
+      "name": "Split Out1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2976,
+        1392
+      ],
+      "id": "bf3dad0e-0827-422e-ad83-a611238eee3a",
+      "name": "Loop Over Items1",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3248,
+        1520
+      ],
+      "id": "957f4f57-7754-46cd-a851-10d7bcbf9be9",
+      "name": "Wait2",
+      "webhookId": "4a66d51a-da7b-43f2-a574-d1a480f3d0ee"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://SEU_IP:PORTA/message/sendText/chamados-glpi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SUA_API_KEY_AQUI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.number }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3504,
+        1520
+      ],
+      "id": "10f3488b-66fe-45d8-9fe5-a0f8be4b32f2",
+      "name": "Enviar mensagem individual"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3248,
+        1152
+      ],
+      "id": "1ccdb46c-018a-4a1f-9241-3b42183e43e9",
+      "name": "No Operation, do nothing3"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3248,
+        1328
+      ],
+      "id": "c62bcdbb-23b7-4ff5-8e72-dd01a5a1ab43",
+      "name": "No Operation, do nothing5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e735091f-993a-483f-85bd-25580789ef04",
+              "leftValue": "={{ $json.id_glpi }}",
+              "rightValue": "311",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "5f8d7ce1-099d-4829-bc14-4c27dae8726d",
+              "leftValue": "={{ $json.id_glpi }}",
+              "rightValue": "327",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "9a718e43-14c2-4e8c-ae5e-dd58cca24743",
+              "leftValue": "={{ $now.toFormat('HH:mm') }}",
+              "rightValue": "10",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2208,
+        1392
+      ],
+      "id": "41b70a24-1de9-4004-98f5-1ba9259c7f61",
+      "name": "Ifinfra4",
+      "notes": "Se for da Infra, manda para Coordenação Infra"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2464,
+        1568
+      ],
+      "id": "a828afa0-ac7f-4148-8411-8d4eb46123b7",
+      "name": "No Operation, do nothing6"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2208,
+        1568
+      ],
+      "id": "d6f72f17-8b59-408f-b649-7fa83fd54835",
+      "name": "No Operation, do nothing7"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9a718e43-14c2-4e8c-ae5e-dd58cca24743",
+              "leftValue": "={{ $now.toFormat('HH:mm') }}",
+              "rightValue": "10",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1936,
+        1392
+      ],
+      "id": "0480fc75-05dd-4be5-abab-a7027d3314e5",
+      "name": "IfHorario",
+      "notes": "Se for da Infra, manda para Coordenação Infra"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Envio individual de chamados ATRASADOS para técnicos\n// Escopo restrito aos relatórios/grupos GLPI vindos do filtro: 311 e 327.\n\nconst ID_GLPI_PERMITIDOS = new Set([\"311\", \"327\"]);\n\nconst inputItems = $input.all().map(i => i.json || {});\n\n// Acumula todos os chamados de todos os itens válidos de entrada\nlet todosOsChamados = [];\nfor (const item of inputItems) {\n  const idGlpiAtual = String(item.id_glpi ?? '').trim();\n  if (ID_GLPI_PERMITIDOS.has(idGlpiAtual) && Array.isArray(item.chamados_individuais)) {\n    const chamadosDoItem = item.chamados_individuais.map(c => ({\n      ...c,\n      __id_glpi_container: idGlpiAtual\n    }));\n    todosOsChamados = todosOsChamados.concat(chamadosDoItem);\n  }\n}\n\nif (!todosOsChamados.length) {\n  return [{ json: { tecnicos: [], motivo: 'sem_chamados_ou_fora_do_escopo' } }];\n}\n\nconst hoje = new Date().toLocaleDateString('pt-BR');\n\n// MAPEAMENTO DE CONTATOS INDIVIDUAIS\n// Vem do node \"Edit Fields - Contatos e menções\", para manter nomes/números fora deste código.\nconst mapaContatos = inputItems.find(item => item.mapaContatosTecnicos)?.mapaContatosTecnicos ?? {};\n\nfunction normalizarTexto(valor) {\n  return String(valor ?? '')\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .trim()\n    .toLowerCase();\n}\n\nfunction parseProgresso(progressoRaw) {\n  const bruto = String(progressoRaw ?? '');\n  const matchTempo = bruto.match(/^(\\d{2}-\\d{2}-\\d{4}\\s+\\d{2}:\\d{2})/);\n  const matchPct = bruto.match(/(\\d{1,3})\\s*%/);\n  return {\n    tempoSolucao: matchTempo ? matchTempo[1] : (bruto.split('\\n')[0] || '').trim(),\n    porcentagem: matchPct ? Number(matchPct[1]) : 0,\n  };\n}\n\nfunction calcularTempoAtrasado(tempoSolucao) {\n  if (!tempoSolucao) return '';\n  const part = String(tempoSolucao).split(/[- :]/);\n  if (part.length < 5) return '';\n\n  const isoString = `${part[2]}-${part[1].padStart(2, '0')}-${part[0].padStart(2, '0')}T${part[3].padStart(2, '0')}:${part[4].padStart(2, '0')}:00-03:00`;\n  const limite = new Date(isoString);\n  if (Number.isNaN(limite.getTime())) return '';\n\n  const diffMs = new Date() - limite;\n  if (diffMs <= 0) return '';\n\n  const dias = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n  const horas = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));\n  return `${dias}d ${horas}h`;\n}\n\nfunction obterGrupoTecnicoRaw(row) {\n  const direto = row['Atribuído - Grupo técnico'];\n  if (direto !== undefined && direto !== null && String(direto).trim() !== '') return direto;\n\n  for (const chave of Object.keys(row || {})) {\n    const chaveNorm = normalizarTexto(chave);\n    if (chaveNorm.includes('grupo') && chaveNorm.includes('tecnico')) {\n      const valor = row[chave];\n      if (valor !== undefined && valor !== null && String(valor).trim() !== '') return valor;\n    }\n  }\n  return '';\n}\n\nfunction ehChamadoDoEscopoCoordInfra(row) {\n  const origem = String(row.__id_glpi_origem ?? row.__id_glpi_container ?? '').trim();\n  if (origem === '311' || origem === '327') return true;\n\n  const grupoNorm = normalizarTexto(obterGrupoTecnicoRaw(row));\n  return grupoNorm.includes('infraestrutura') || grupoNorm.includes('coordenacao infra');\n}\n\nfunction ehAtrasado(row) {\n  const statusNorm = normalizarTexto(row.Status);\n  \n  // Se está aguardando o requerente (pendente), ignora e não notifica o técnico\n  if (statusNorm.includes('pendente')) return false;\n\n  const excedidoNorm = normalizarTexto(row['Tempo para resolver excedido']);\n  const progressoRaw = row['Tempo para solução + Progresso'] || row['Tempo para solution + Progresso'] || '';\n  const { porcentagem } = parseProgresso(progressoRaw);\n\n  return statusNorm.includes('atrasado') || excedidoNorm === 'sim' || porcentagem >= 100;\n}\n\nfunction extrairTecnicos(tecnicoRaw) {\n  if (!tecnicoRaw || normalizarTexto(tecnicoRaw) === 'nan') return [];\n  return String(tecnicoRaw)\n    .split('<br>')\n    .map(nome => nome.trim())\n    .filter(Boolean)\n    .map(nomeCompleto => ({\n      nomeCompleto,\n      primeiroNome: nomeCompleto.split(/\\s+/)[0],\n    }));\n}\n\nconst chamadosPorTecnico = {};\nconst tecnicosSemContato = new Set();\n\nfor (const chamado of todosOsChamados) {\n  if (!chamado.ID || !ehChamadoDoEscopoCoordInfra(chamado) || !ehAtrasado(chamado)) continue;\n\n  const tecnicos = extrairTecnicos(chamado['Atribuído - Técnico']);\n  if (!tecnicos.length) continue;\n\n  const progressoRaw = chamado['Tempo para solução + Progresso'] || chamado['Tempo para solution + Progresso'] || '';\n  const { tempoSolucao, porcentagem } = parseProgresso(progressoRaw);\n  const tempoAtrasado = calcularTempoAtrasado(tempoSolucao);\n  const linkFinal = `https://glpi.suaempresa.com/glpi/front/ticket.form.php?id=${chamado.ID}`;\n  const nivel = chamado.__nivel_infra ? `[${chamado.__nivel_infra}] ` : '';\n\n  let metaTempo = '';\n  if (tempoAtrasado) {\n    metaTempo = ` — atrasado há ${tempoAtrasado}`;\n  }\n\n  for (const tecnico of tecnicos) {\n    const contato = mapaContatos[tecnico.primeiroNome];\n    if (!contato) {\n      tecnicosSemContato.add(tecnico.primeiroNome);\n      continue;\n    }\n\n    if (!chamadosPorTecnico[tecnico.primeiroNome]) {\n      chamadosPorTecnico[tecnico.primeiroNome] = [];\n    }\n\n    chamadosPorTecnico[tecnico.primeiroNome].push(\n      `${nivel}🔴 *Chamado ATRASADO:* ${chamado.ID}\\n` +\n      `📌 *Título:* ${chamado['Título'] || 'Sem título'}\\n` +\n      `🔗 ${linkFinal}\\n` +\n      `📅 *Abertura:* ${chamado['Data de abertura'] || ''}\\n` +\n      `⏱️ *Limite/SLA:* ${tempoSolucao || 'não informado'}${metaTempo}\\n` +\n      `📊 *Progresso:* ${porcentagem}%`\n    );\n  }\n}\n\nconst payloadEnvio = [];\n\nfor (const [nome, listaChamados] of Object.entries(chamadosPorTecnico)) {\n  let msg = `*Olá, ${nome}!*\\n\\n`;\n  msg += `Você possui *${listaChamados.length} chamado(s) atrasado(s)* atribuído(s) a você no GLPI do TJPI em *${hoje}*.\\n\\n`;\n  msg += listaChamados.join('\\n\\n');\n  msg += `\\n\\n_Por favor, verifique e atualize o atendimento no GLPI._\\n`;\n  msg += `🤖 _Esta é uma mensagem automática gerada pelo sistema._`;\n\n  payloadEnvio.push({\n    tecnico: nome,\n    number: mapaContatos[nome],\n    mensagem: msg,\n  });\n}\n\nreturn [{\n  json: {\n    tecnicos: payloadEnvio,\n    total_tecnicos_com_envio: payloadEnvio.length,\n    total_chamados_atrasados_para_envio: Object.values(chamadosPorTecnico).reduce((acc, lista) => acc + lista.length, 0),\n    tecnicos_sem_contato: Array.from(tecnicosSemContato)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        1376
+      ],
+      "id": "57fa11c3-7cb3-4289-8453-35b511c757e0",
+      "name": "Preparar mensagens individuais1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Acessa os dados estáticos do workflow para persistência entre pulsos\nconst staticData = $getWorkflowStaticData('global');\n\n// 2. Obtém o ID desta execução específica (reseta a cada rodada do workflow)\nconst execId = $executionId;\n\n// 3. Verifica se esta execução já enviou o sinal de 'concluído'\nif (staticData.lastExecId === execId) {\n  return [{ json: { status: \"execucao_duplicada\" } }];\n}\n\n// 4. Primeiro pulso detectado: registra o ID da execução para bloquear os próximos\nstaticData.lastExecId = execId;\nreturn [{ json: { status: \"permitido\" } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3792,
+        1728
+      ],
+      "id": "d21eb8b5-7053-4a5c-8f9e-7eb73163015b",
+      "name": "Disjuntor de Execução"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://SEU_IP:PORTA/message/sendText/chamados-glpi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "SUA_API_KEY_AQUI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "ID_DO_GRUPO_1@g.us"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Build Message JS').item.json.mensagem }}"
+            },
+            {
+              "name": "mentioned",
+              "value": "={{ (Array.isArray($('Edit Fields - Contatos e menções').item.json.mentioned) && $('Edit Fields - Contatos e menções').item.json.mentioned.length > 0) ? $('Edit Fields - Contatos e menções').item.json.mentioned : undefined }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3280,
+        2272
+      ],
+      "id": "e1a4ee8c-3e41-4ac4-99a9-26bfbbba30e0",
+      "name": "Infra Notificações",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://SEU_IP:PORTA/message/sendText/chamados-glpi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "SUA_API_KEY_AQUI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "=ID_DO_GRUPO_2@g.us"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Build Message JS').item.json.mensagem }}"
+            },
+            {
+              "name": "mentioned",
+              "value": "={{ (Array.isArray($('Edit Fields - Contatos e menções').item.json.mentioned) && $('Edit Fields - Contatos e menções').item.json.mentioned.length > 0) ? $('Edit Fields - Contatos e menções').item.json.mentioned : undefined }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2624,
+        2128
+      ],
+      "id": "ec99cfdf-3010-445f-9ae2-9ed8d5f704ec",
+      "name": "Coordenação Infra",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "amount": 1.5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2384,
+        2128
+      ],
+      "id": "928f86c3-fec8-4c34-ae93-e772a82588e3",
+      "name": "Wait Coord. Infra",
+      "webhookId": "f9a74d55-5ca9-4a3c-a924-9ef7496a5798"
+    },
+    {
+      "parameters": {
+        "amount": 1.5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3056,
+        2272
+      ],
+      "id": "855a5a62-a064-430d-b162-52db5f043761",
+      "name": "Wait Infra Notif.",
+      "webhookId": "36918d45-f287-45ae-90da-438d8dfd90cf"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "chk_08h",
+              "leftValue": "={{ $now.toFormat('HH') }}",
+              "rightValue": "08",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2848,
+        2384
+      ],
+      "id": "20c0b486-fa9b-4dae-a9ad-6256b9466081",
+      "name": "É 08h?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Coleta todos os itens do nó anterior\nconst itensAnteriores = $input.all();\n\n// Cria um JSON único contendo uma lista desses itens\nreturn [{\n    json: {\n        listaDeDados: itensAnteriores.map(item => item.json)\n    }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        2560
+      ],
+      "id": "904c9cf9-9eb0-4312-b871-d96abef76b37",
+      "name": "Concentrador"
+    },
+    {
+      "parameters": {
+        "content": "## 07 · Envio para Telegram\n\n**Objetivo:** Caso aconteça algum erro, enviar alternativamente para o Telegram.",
+        "height": 740,
+        "width": 748,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3712,
+        1328
+      ],
+      "typeVersion": 1,
+      "id": "a4ec9651-48d1-4fa5-9a41-dc596d5a32fa",
+      "name": "Módulo 05 - Envio para grupos WhatsApp1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "chk_infra",
+              "leftValue": "={{ ['311', '327', '324', '332'].includes(String($json.id_glpi)) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2176,
+        2416
+      ],
+      "id": "c79c4ce4-df03-409e-9d35-988631418dc1",
+      "name": "É da Infra?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "valida_skip_corrigido",
+              "leftValue": "={{ $json.skip !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1952,
+        2544
+      ],
+      "id": "a06a5ecf-72af-403b-b507-1c7ec99f82f2",
+      "name": "Valida Skip"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0b881bad-a8b8-44a0-82c3-0950cce005f9",
+              "name": "mapaContatosTecnicos",
+              "value": "={{ {\"Giovanny\": \"55XXXXXXXXXXX\", \"Álvaro\": \"55XXXXXXXXXXX\", \"Alvaro\": \"55XXXXXXXXXXX\", \"Anderson\": \"55XXXXXXXXXXX\", \"Antônio\": \"55XXXXXXXXXXX\", \"Antonio\": \"55XXXXXXXXXXX\", \"Cristiano\": \"55XXXXXXXXXXX\", \"Elivelton\": \"55XXXXXXXXXXX\", \"Ernani\": \"55XXXXXXXXXXX\", \"Fabiano\": \"55XXXXXXXXXXX\", \"Gildean\": \"55XXXXXXXXXXX\", \"Raimundo\": \"55XXXXXXXXXXX\", \"Kleberson\": \"55XXXXXXXXXXX\", \"Leandro\": \"55XXXXXXXXXXX\", \"Marcelo\": \"55XXXXXXXXXXX\"} }}",
+              "type": "object"
+            },
+            {
+              "id": "fba418d8-eca1-458c-ae34-bf1e1ea31344",
+              "name": "mentioned",
+              "value": "={{ (() => { const mapa = {\"Giovanny\": \"55XXXXXXXXXXX\", \"Álvaro\": \"55XXXXXXXXXXX\", \"Alvaro\": \"55XXXXXXXXXXX\", \"Anderson\": \"55XXXXXXXXXXX\", \"Antônio\": \"55XXXXXXXXXXX\", \"Antonio\": \"55XXXXXXXXXXX\", \"Cristiano\": \"55XXXXXXXXXXX\", \"Elivelton\": \"55XXXXXXXXXXX\", \"Ernani\": \"55XXXXXXXXXXX\", \"Fabiano\": \"55XXXXXXXXXXX\", \"Gildean\": \"55XXXXXXXXXXX\", \"Raimundo\": \"55XXXXXXXXXXX\", \"Kleberson\": \"55XXXXXXXXXXX\", \"Leandro\": \"55XXXXXXXXXXX\", \"Marcelo\": \"55XXXXXXXXXXX\"}; const vistos = new Set(); return ($json.tecnicos_lista ?? []).map(nome => mapa[String(nome)] || mapa[String(nome).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')]).filter(Boolean).map(numero => String(numero).replace(/\\D/g, '')).filter(numero => { if (!numero || vistos.has(numero)) return false; vistos.add(numero); return true; }); })() }}",
+              "type": "array"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1696,
+        2544
+      ],
+      "id": "f6231bed-4301-42fc-8da3-9d76ff801eba",
+      "name": "Edit Fields - Contatos e menções"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Captura todos os itens que chegaram ao node\nconst all = $input.all().map(i => i.json);\n\n// 2. Tenta obter o grupo/id do Split Out ou do próprio item\nconst grupo = all[0]?.grupo ?? $node[\"Split Out\"].json[\"grupo\"];\nconst id_glpi = all[0]?.id_glpi ?? $node[\"Split Out\"].json[\"id_glpi\"];\n\n// 3. FILTRO CRUCIAL: Mantém apenas itens que possuem um ID preenchido\nconst rows = all.filter(r => r && r.ID && String(r.ID).trim() !== \"\");\n\n// Funções auxiliares (espelhando o Python)\nfunction todayBR() {\n  const d = new Date();\n  return `${String(d.getDate()).padStart(2, \"0\")}/${String(d.getMonth() + 1).padStart(2, \"0\")}/${d.getFullYear()}`;\n}\n\nfunction formatReport(title, group, dateStr, rowsList, header = \"\") {\n  let count = rowsList.length;\n  if (rowsList.length === 1 && rowsList[0] === \"Não há chamados\") {\n    count = 0;\n  }\n  let msg = `${title} - *${group}* (*${count}*) - *${dateStr}*\\n`;\n  if (header) msg += `\\n${header}`;\n  msg += rowsList.join(\"\\n\");\n  return msg;\n}\n\nconst hoje = todayBR();\n\n// --- CASO: COM CHAMADOS ---\nconst linhas = [];\nconst linhasDetalhadas = [];\nconst tecnicosLista = [];\nconst _seenTecnicos = new Set();\n\n// Funções de parsing e labels\nfunction extrairTecnicos(tecnicoRaw, seen) {\n  if (tecnicoRaw && String(tecnicoRaw).trim().toLowerCase() !== 'nan') {\n    const nomesFull = String(tecnicoRaw).split(\"<br>\").map(n => n.trim()).filter(n => n);\n    const tecnicoPrincipal = nomesFull[0] || \"\";\n    const novos = [];\n    for (const full of nomesFull) {\n      const primeiroNome = full.split(\" \")[0];\n      if (primeiroNome && !seen.has(primeiroNome)) {\n        novos.push(primeiroNome);\n        seen.add(primeiroNome);\n      }\n    }\n    return { tecnico: tecnicoPrincipal, tecnicoFull: nomesFull.join(\", \"), novos };\n  }\n  return { tecnico: \"\", tecnicoFull: \"\", novos: [] };\n}\n\nfunction extrairGrupoTecnico(grupoRaw) {\n  if (grupoRaw && String(grupoRaw).trim().toLowerCase() !== 'nan') {\n    const grupos = String(grupoRaw)\n      .split(\"<br>\")\n      .map(g => g.trim())\n      .filter(g => g)\n      .map(g => {\n        const partes = g.split(\">\").map(p => p.trim()).filter(p => p);\n        return partes.length ? partes[partes.length - 1] : g;\n      });\n    return grupos.join(\", \");\n  }\n  return \"\";\n}\n\nfunction obterGrupoTecnicoRaw(row) {\n  const direto = row[\"Atribuído - Grupo técnico\"];\n  if (direto !== undefined && direto !== null && String(direto).trim() !== \"\") {\n    return direto;\n  }\n\n  const chaves = Object.keys(row || {});\n  for (const chave of chaves) {\n    const chaveNorm = String(chave)\n      .normalize(\"NFD\")\n      .replace(/[\\u0300-\\u036f]/g, \"\")\n      .toLowerCase();\n    if (chaveNorm.includes(\"grupo\") && chaveNorm.includes(\"tecnico\")) {\n      const valor = row[chave];\n      if (valor !== undefined && valor !== null && String(valor).trim() !== \"\") {\n        return valor;\n      }\n    }\n  }\n\n  return \"\";\n}\n\nconst IDS_INFRA_CONSOLIDAR = new Set([\"327\", \"324\", \"332\"]);\n\nfunction extrairUltimoGrupo(grupoRaw) {\n  if (!grupoRaw || String(grupoRaw).trim().toLowerCase() === 'nan') return \"\";\n  const grupos = String(grupoRaw)\n    .split(\"<br>\")\n    .map(g => g.trim())\n    .filter(g => g)\n    .map(g => {\n      const partes = g.split(\">\").map(p => p.trim()).filter(p => p);\n      return partes.length ? partes[partes.length - 1] : g;\n    });\n  return grupos[0] || \"\";\n}\n\nfunction obterNivelInfra(grupoRaw) {\n  const ultimoGrupo = extrairUltimoGrupo(grupoRaw).toLowerCase();\n  if (ultimoGrupo.startsWith(\"n1 - infraestrutura\")) return \"N1\";\n  if (ultimoGrupo.startsWith(\"n2 - infraestrutura\")) return \"N2\";\n  if (ultimoGrupo.startsWith(\"n3 - infraestrutura\")) return \"N3\";\n  return \"\";\n}\n\nconst is311 = String(id_glpi) === \"311\";\nconst isInfraIndividual = IDS_INFRA_CONSOLIDAR.has(String(id_glpi));\n\nif (isInfraIndividual) {\n  // Os IDs 327/324/332 serão enviados somente pelo consolidado gerado no 311.\n  return [{ json: { skip: true, id_glpi, grupo } }];\n}\n\nconst rowsPrincipais = [];\nconst rowsInfraConsolidadas = [];\n\nfor (const r of rows) {\n  if (!is311) {\n    rowsPrincipais.push(r);\n    continue;\n  }\n\n  const nivelInfra = obterNivelInfra(obterGrupoTecnicoRaw(r));\n  if (nivelInfra) {\n    rowsInfraConsolidadas.push({ row: r, nivel: nivelInfra });\n  } else {\n    rowsPrincipais.push(r);\n  }\n}\n\n// --- CASO: SEM CHAMADOS ---\nif (rowsPrincipais.length === 0 && (!is311 || rowsInfraConsolidadas.length === 0)) {\n  const msg = formatReport(\"Chamados em atraso\", grupo, hoje, [\"Não há chamados\"]);\n\n  // Retorna a mensagem inteira em um único item\n  return [{\n    json: {\n      id_glpi,\n      grupo,\n      mensagem: msg,\n      tecnicos_lista: [],\n      chamados_individuais: [],\n      parte: 1,\n      total_partes: 1,\n    }\n  }];\n}\n\nfunction parseProgresso(progressoRaw) {\n  let tempoSolucao = \"\";\n  let porcentagem = 0;\n  if (typeof progressoRaw === 'string') {\n    // Captura a data/hora no início da string\n    const matchTempo = progressoRaw.match(/^(\\d{2}-\\d{2}-\\d{4} \\d{2}:\\d{2})/);\n    if (matchTempo) {\n      tempoSolucao = matchTempo[1];\n    } else {\n      tempoSolucao = progressoRaw.split(\"\\n\")[0].trim();\n    }\n    const matchPct = progressoRaw.match(/(\\d{1,3})\\s*%/);\n    if (matchPct) porcentagem = parseInt(matchPct[1]);\n  }\n  return { tempoSolucao, porcentagem };\n}\n\n// Função para calcular o tempo atrasado\nfunction calcularTempoAtrasado(tempoSolucao) {\n  // tempoSolucao no formato \"DD-MM-YYYY HH:mm\"\n  if (!tempoSolucao) return \"\";\n  const part = tempoSolucao.split(/[- :]/);\n  if (part.length < 5) return \"\";\n  // Monta string ISO com timezone -03:00 (Brasília)\n  const isoString = `${part[2]}-${part[1].padStart(2, '0')}-${part[0].padStart(2, '0')}T${part[3].padStart(2, '0')}:${part[4].padStart(2, '0')}:00-03:00`;\n  const limite = new Date(isoString);\n  const agora = new Date();\n  const diffMs = agora - limite;\n  if (diffMs <= 0) return \"\";\n  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));\n  return ` (${days}d ${hours}h)`;\n}\n\nfunction determinarStatusLabel(status, excedido, porcentagem) {\n  if (status === \"Novo\") return { emoji: \"🔵\", label: \"Em Aberto\" };\n  if (status === \"Pendente\") return { emoji: \"⏳\", label: \"PENDENTE\" };\n  if (excedido || porcentagem === 100) return { emoji: \"🔴\", label: `ATRASADO(${porcentagem}%)` };\n  if (porcentagem < 50) return { emoji: \"🟢\", label: `Em Atendimento(${porcentagem}%)` };\n  if (porcentagem < 70) return { emoji: \"🟡\", label: `Atenção(${porcentagem}%)` };\n  if (porcentagem < 100) return { emoji: \"🟠\", label: `Atenção(${porcentagem}%)` };\n  return { emoji: \"🔴\", label: \"ATRASADO\" };\n}\n\n// Processa as linhas\nfor (const r of rowsPrincipais) {\n  const idChamado = r[\"ID\"] || \"\";\n  const tecnicoRaw = r[\"Atribuído - Técnico\"] || \"\";\n  const grupoTecnicoRaw = obterGrupoTecnicoRaw(r);\n  const { tecnico, tecnicoFull, novos } = extrairTecnicos(tecnicoRaw, _seenTecnicos);\n  const grupoTecnico = extrairGrupoTecnico(grupoTecnicoRaw);\n  if (novos) tecnicosLista.push(...novos);\n\n  const status = r[\"Status\"] || \"\";\n  const dataAbertura = r[\"Data de abertura\"] || \"\";\n  const progressoRaw = r[\"Tempo para solução + Progresso\"] || \"\";\n  const excedido = String(r[\"Tempo para resolver excedido\"] || \"\").trim().toLowerCase() === \"sim\";\n\n  const { tempoSolucao, porcentagem } = parseProgresso(progressoRaw);\n  const TituloChamado = r[\"Título\"] || \"Sem título\";\n  const linkFinal = `https://glpi.suaempresa.com/glpi/front/ticket.form.php?id=${idChamado}`;\n  const { emoji, label: statusLabel } = determinarStatusLabel(status, excedido, porcentagem);\n\n  let atrasadoText = \"\";\n  if (emoji === \"🔴\") {\n    atrasadoText = calcularTempoAtrasado(tempoSolucao);\n  }\n\n  let labelTecnico = tecnicoFull;\n  if (status === \"Novo\" && !tecnico) labelTecnico = \"[NOVO]\";\n\n  const dataAtt = r['Última atualização'] || '';\n  let pendenteText = '';\n  if (status === 'Pendente' && dataAtt) {\n    try {\n      const part = dataAtt.split(/[- :]/); // DD-MM-YYYY HH:mm\n      const dtAtt = new Date(part[2], part[1]-1, part[0], part[3], part[4]);\n      const diffMs = new Date() - dtAtt;\n      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));\n      pendenteText = ` (${days}d ${hours}h)`;\n    } catch(e) {}\n  }\n\n  let tempoSolucaoText = '';\n  if ([\"🟢\", \"🟡\", \"🟠\"].includes(emoji) && tempoSolucao) {\n    tempoSolucaoText = ` (${tempoSolucao})`;\n  }\n  const textoLinha = `${emoji}${pendenteText}${atrasadoText} (${idChamado}) - ${TituloChamado} - ${linkFinal} - *${labelTecnico}* - ${dataAbertura} - ${tempoSolucao} - ${porcentagem}%${tempoSolucaoText}`;\n  linhas.push(textoLinha);\n\n  // Formato detalhado para o ID 311\n  if (String(id_glpi) === \"311\") {\n    const bloco = [\n      `${emoji} *${statusLabel}${pendenteText}${atrasadoText}*`,\n      `- *Grupo técnico:* ${grupoTecnico || \"Não informado\"}`,\n      `- *Título:* ${TituloChamado || 'Sem título'}\\n` +\n      `- *Link:* ${linkFinal}`,\n      `- *ID:* ${idChamado}`,\n      `- *Resp:* *${labelTecnico}*`,\n      `- *Abertura:* ${dataAbertura}`\n    ];\n    if (tempoSolucao) bloco.push(`- *Tempo para solução:* ${tempoSolucao}`);\n    // Sempre termina com uma quebra de linha\n    bloco.push('');\n    linhasDetalhadas.push(bloco.join(\"\\n\"));\n  }\n}\n\nlet mensagem = \"\";\nif (String(id_glpi) === \"311\") {\n  mensagem = formatReport(\"Chamados em Atraso\", grupo, hoje, linhasDetalhadas, \"\");\n} else {\n  mensagem = formatReport(\"Chamados em Atraso\", grupo, hoje, linhas, \"STATUS | ID | LINK | RESP | DATA | TEMPO | %\\n\\n\");\n}\n\nconst mencoes = tecnicosLista.map(nome => `@${nome} TJPI`).join(\" \");\nif (mencoes) mensagem += `\\n\\n${mencoes}`;\n\nconst outputs = [{\n  json: {\n    id_glpi,\n    grupo,\n    mensagem: mensagem,\n    tecnicos_lista: tecnicosLista,\n    chamados_individuais: rowsPrincipais.map(r => ({ ...r, __id_glpi_origem: String(id_glpi), __grupo_origem: grupo })),\n    parte: 1,\n    total_partes: 1,\n  }\n}];\n\nif (is311 && rowsInfraConsolidadas.length > 0) {\n  const linhasInfra = [];\n  const tecnicosInfra = [];\n  const seenInfra = new Set();\n\n  for (const item of rowsInfraConsolidadas) {\n    const r = item.row;\n    const nivel = item.nivel;\n\n    const idChamado = r[\"ID\"] || \"\";\n    const tecnicoRaw = r[\"Atribuído - Técnico\"] || \"\";\n    const { tecnico, tecnicoFull, novos } = extrairTecnicos(tecnicoRaw, seenInfra);\n    if (novos) tecnicosInfra.push(...novos);\n\n    const status = r[\"Status\"] || \"\";\n    const dataAbertura = r[\"Data de abertura\"] || \"\";\n    const progressoRaw = r[\"Tempo para solução + Progresso\"] || \"\";\n    const excedido = String(r[\"Tempo para resolver excedido\"] || \"\").trim().toLowerCase() === \"sim\";\n\n    const { tempoSolucao, porcentagem } = parseProgresso(progressoRaw);\n    const TituloChamado = r[\"Título\"] || \"Sem título\";\n    const linkFinal = `https://glpi.suaempresa.com/glpi/front/ticket.form.php?id=${idChamado}`;\n    const { emoji } = determinarStatusLabel(status, excedido, porcentagem);\n\n    let atrasadoText = \"\";\n    if (emoji === \"🔴\") {\n      atrasadoText = calcularTempoAtrasado(tempoSolucao);\n    }\n\n    let labelTecnico = tecnicoFull;\n    if (status === \"Novo\" && !tecnico) labelTecnico = \"[NOVO]\";\n\n    const dataAtt = r['Última atualização'] || '';\n    let pendenteText = '';\n    if (status === 'Pendente' && dataAtt) {\n      try {\n        const part = dataAtt.split(/[- :]/); // DD-MM-YYYY HH:mm\n        const dtAtt = new Date(part[2], part[1]-1, part[0], part[3], part[4]);\n        const diffMs = new Date() - dtAtt;\n        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n        const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));\n        pendenteText = ` (${days}d ${hours}h)`;\n      } catch(e) {}\n    }\n\n    let tempoSolucaoText = '';\n    if ([\"🟢\", \"🟡\", \"🟠\"].includes(emoji) && tempoSolucao) {\n      tempoSolucaoText = ` (${tempoSolucao})`;\n    }\n\n    linhasInfra.push(`[${nivel}] ${emoji}${pendenteText}${atrasadoText} (${idChamado}) - ${TituloChamado} - ${linkFinal} - *${labelTecnico}* - ${dataAbertura} - ${tempoSolucao} - ${porcentagem}%${tempoSolucaoText}`);\n  }\n\n  let mensagemInfra = formatReport(\"Chamados em Atraso\", \"INFRAESTRUTURA\", hoje, linhasInfra, \"NIVEL | ID | LINK | RESP | DATA | TEMPO | %\\n\\n\");\n  const mencoesInfra = tecnicosInfra.map(nome => `@${nome} TJPI`).join(\" \");\n  if (mencoesInfra) mensagemInfra += `\\n\\n${mencoesInfra}`;\n\n  outputs.push({\n    json: {\n      id_glpi: \"327\",\n      ids_glpi_consolidados: [327, 324, 332],\n      grupo: \"INFRAESTRUTURA\",\n      mensagem: mensagemInfra,\n      tecnicos_lista: tecnicosInfra,\n      chamados_individuais: rowsInfraConsolidadas.map(item => ({ ...item.row, __id_glpi_origem: \"311\", __nivel_infra: item.nivel, __grupo_origem: \"INFRAESTRUTURA\" })),\n      parte: 1,\n      total_partes: 1,\n    }\n  });\n}\n\nreturn outputs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        2544
+      ],
+      "id": "1811e120-a0e6-4420-9f06-90d4ecc68d39",
+      "name": "Build Message JS"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4f92f6ce-c127-45c4-98ed-d9fab3e9e368",
+              "name": "id_glpi",
+              "value": "={{ $json.id_glpi ?? $json.__id_glpi_validado ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "75a18a1f-85a2-4591-ba62-0a2a719b7483",
+              "name": "grupo",
+              "value": "={{ $json.grupo ?? $json.__grupo_validado ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "345439d1-c002-4644-a99c-c673d69d40d2",
+              "name": "ID",
+              "value": "={{ $json.ID }}",
+              "type": "string"
+            },
+            {
+              "id": "1d57a749-904a-4ae9-a1a0-72bf65c9b8d9",
+              "name": "Título",
+              "value": "={{ $json['Título'] }}",
+              "type": "string"
+            },
+            {
+              "id": "2b9ac233-28ee-43e7-b578-12f5fe98c427",
+              "name": "Status",
+              "value": "={{ $json.Status }}",
+              "type": "string"
+            },
+            {
+              "id": "acd8bad3-29f7-4bad-a7b3-197018351f0a",
+              "name": "Última atualização",
+              "value": "={{ $json['Última atualização'] }}",
+              "type": "string"
+            },
+            {
+              "id": "c79f438d-4d10-46a6-8183-d59e762727af",
+              "name": "Data de abertura",
+              "value": "={{ $json['Data de abertura'] }}",
+              "type": "string"
+            },
+            {
+              "id": "b59cc1f5-aa79-4dd6-9f56-49cbb6c02617",
+              "name": "Prioridade",
+              "value": "={{ $json.Prioridade }}",
+              "type": "string"
+            },
+            {
+              "id": "100f9d46-0c6d-45f3-b061-653a4872a6e7",
+              "name": "Atribuído - Grupo técnico",
+              "value": "={{ $json['Atribuído - Grupo técnico'] }}",
+              "type": "string"
+            },
+            {
+              "id": "29dc6ddd-6370-42dc-9472-ffa00d7de198",
+              "name": "Atribuído - Técnico",
+              "value": "={{ $json['Atribuído - Técnico'] }}",
+              "type": "string"
+            },
+            {
+              "id": "b0f5dba3-3a78-434f-8a89-f42d349d585f",
+              "name": "Tempo para solução + Progresso",
+              "value": "={{ $json['Tempo para solução + Progresso'] }}",
+              "type": "string"
+            },
+            {
+              "id": "497c0114-327d-406a-91d5-e6a5ccb241a7",
+              "name": "Tempo para resolver excedido",
+              "value": "={{ $json['Tempo para resolver excedido'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1328,
+        2544
+      ],
+      "id": "044f98ce-51da-4283-bb5a-fa02de051fa7",
+      "name": "Mensagem Grupo",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request TJPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Feriado": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request TJPI": {
+      "main": [
+        [
+          {
+            "node": "Verificar Feriado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Variaveis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Links[backup]": {
+      "main": [
+        []
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing8",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Carregar busca salva GLPI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST login": {
+      "main": [
+        [
+          {
+            "node": "Cookie Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Variables HTML Login": {
+      "main": [
+        [
+          {
+            "node": "POST login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Variaveis": {
+      "main": [
+        [
+          {
+            "node": "GET Login Cookie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cookie Auth": {
+      "main": [
+        [
+          {
+            "node": "Listas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Login Cookie": {
+      "main": [
+        [
+          {
+            "node": "Variables HTML Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Filtrar CSV pelo grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET CSV": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar resultado da pesquisa": {
+      "main": [
+        [
+          {
+            "node": "IF Baixar CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Baixar CSV": {
+      "main": [
+        [
+          {
+            "node": "GET CSV",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mensagem Grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar CSV pelo grupo": {
+      "main": [
+        [
+          {
+            "node": "Mensagem Grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carregar busca salva GLPI": {
+      "main": [
+        [
+          {
+            "node": "Extrair window.location da busca salva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair window.location da busca salva": {
+      "main": [
+        [
+          {
+            "node": "Abrir página da busca salva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Abrir página da busca salva": {
+      "main": [
+        [
+          {
+            "node": "Validar resultado da pesquisa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listas": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro Unificador": {
+      "main": [
+        [
+          {
+            "node": "Call 'Chamados GLPI [ARTHUR]'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "Enviar mensagem individual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar mensagem individual": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ifinfra4": {
+      "main": [
+        [
+          {
+            "node": "Preparar mensagens individuais1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IfHorario": {
+      "main": [
+        [
+          {
+            "node": "Ifinfra4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensagens individuais1": {
+      "main": [
+        [
+          {
+            "node": "Split Out1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disjuntor de Execução": {
+      "main": [
+        [
+          {
+            "node": "Filtro Unificador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Infra Notificações": {
+      "main": [
+        [
+          {
+            "node": "Concentrador",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Disjuntor de Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Coordenação Infra": {
+      "main": [
+        [
+          {
+            "node": "É 08h?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Disjuntor de Execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Coord. Infra": {
+      "main": [
+        [
+          {
+            "node": "Coordenação Infra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Infra Notif.": {
+      "main": [
+        [
+          {
+            "node": "Infra Notificações",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 08h?": {
+      "main": [
+        [
+          {
+            "node": "Wait Infra Notif.",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Concentrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Concentrador": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É da Infra?": {
+      "main": [
+        [
+          {
+            "node": "Wait Coord. Infra",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 08h?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valida Skip": {
+      "main": [
+        [
+          {
+            "node": "É da Infra?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Concentrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields - Contatos e menções": {
+      "main": [
+        [
+          {
+            "node": "Valida Skip",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IfHorario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Message JS": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields - Contatos e menções",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem Grupo": {
+      "main": [
+        [
+          {
+            "node": "Build Message JS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ac6f800d51d378d3f00f31fd1044dac7198d674b8dee5669bedcc1bdac90cf64"
+  }
+}
